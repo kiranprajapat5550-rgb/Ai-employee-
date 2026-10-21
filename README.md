@@ -35,7 +35,7 @@ Configure your MCP client to launch this command in the repository's Python envi
 
 ## Review workflow
 
-The initial MCP interface creates and lists proposals. Review decisions are currently available through the Python `ApprovalQueue.review(proposal_id, decision, reviewer, note)` API; no MCP tool automatically executes approved work. Add an authenticated founder-only review interface before using this beyond local testing.
+The MCP interface creates and lists proposals. The `feature/secure-approval-api-bridge` branch adds an authenticated HTTP API in `ai_employee_system/api.py`, including a founder-token-protected review endpoint. Configure distinct `API_BEARER_TOKEN` and `FOUNDER_BEARER_TOKEN` values. Review decisions update the audit record only; no MCP tool or HTTP route executes approved work. Before using this beyond local testing, configure HTTPS, persistent storage, secret management, backups, rate limiting, and monitoring.
 
 ## Make.com / n8n
 See [integration guidance](docs/make-n8n-integration.md). Start with internal drafts and test data; do not connect live send/publish/spend actions until a separate explicit execution gate and audit logging are implemented.
