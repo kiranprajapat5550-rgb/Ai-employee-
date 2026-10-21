@@ -10,7 +10,7 @@ This bridge exposes the existing SQLite proposal queue over HTTP. It only create
 - `GET /proposals/{id}` — read one proposal; requires `API_BEARER_TOKEN`.
 - `POST /proposals/{id}/review` — record an approval or rejection; requires the separate `FOUNDER_BEARER_TOKEN`.
 
-Use an Authorization header such as `Authorization: Bearer <token>`. Do not put tokens in URLs, workflow JSON, commits, or logs. Generate distinct high-entropy values for the two tokens and store them only in the hosting platform's secret environment settings. Use HTTPS; do not expose this API over plain HTTP.
+Use an Authorization header such as `Authorization: Bearer <token>`. Do not put tokens in URLs, workflow JSON, commits, or logs. Generate distinct high-entropy values for the two tokens and store them only in the hosting platform's secret environment settings. Use HTTPS; do not expose this API over plain HTTP. The founder-review endpoint fails closed with HTTP 503 unless both environment variables are configured and their values differ.
 
 ## Request examples
 
