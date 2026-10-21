@@ -1,0 +1,70 @@
+{
+  "name": "AI Employee System - Safe Proposal Demo",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e4e91145-8c52-4b9c-a220-9bb70b47d101",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "task_title",
+              "value": "Draft social media post"
+            },
+            {
+              "name": "description",
+              "value": "Prepare a draft for founder review. Do not publish or send."
+            },
+            {
+              "name": "status",
+              "value": "pending_approval"
+            },
+            {
+              "name": "founder_approval_required",
+              "value": "true"
+            },
+            {
+              "name": "execution_status",
+              "value": "not_executed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a3b3a79b-0b7c-4f0b-9a17-9dff7bb0b202",
+      "name": "Prepare Safe Proposal",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Safe Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d92c89b7-f26c-49b4-9eaa-2b27a56f1c13",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
