@@ -171,5 +171,34 @@ class ApprovalApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
 
 
+    def test_founder_review_fails_closed_when_tokens_are_identical(self):
+        item = self.queue.submit("Draft", "Draft only")
+        with patch.dict(os.environ, {
+            "API_BEARER_TOKEN": "same-token",
+            "FOUNDER_BEARER_TOKEN": "same-token",
+        }):
+            response = self.client.post(
+                f"/proposals/{item['id']}/review",
+                headers={"Authorization": "Bearer same-token"},
+                json={"decision": "approved"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.queue.get(item["id"])["status"], "pending_approval")
+
+    def test_founder_review_fails_closed_when_api_token_missing(self):
+        item = self.queue.submit("Draft", "Draft only")
+        with patch.dict(os.environ, {
+            "API_BEARER_TOKEN": "",
+            "FOUNDER_BEARER_TOKEN": "test-founder-token",
+        }):
+            response = self.client.post(
+                f"/proposals/{item['id']}/review",
+                headers={"Authorization": "Bearer test-founder-token"},
+                json={"decision": "approved"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.queue.get(item["id"])["status"], "pending_approval")
+
+
 if __name__ == "__main__":
     unittest.main()
