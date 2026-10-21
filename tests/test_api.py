@@ -102,5 +102,74 @@ class ApprovalApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
 
 
+    def test_invalid_api_token_is_rejected(self):
+        response = self.client.get(
+            "/proposals",
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_missing_founder_token_configuration_fails_closed(self):
+        with patch.dict(os.environ, {"FOUNDER_BEARER_TOKEN": ""}):
+            item = self.queue.submit("Draft", "Draft only")
+            response = self.client.post(
+                f"/proposals/{item['id']}/review",
+                headers={"Authorization": "Bearer test-founder-token"},
+                json={"decision": "approved"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.queue.get(item["id"])["status"], "pending_approval")
+
+    def test_get_proposal_by_id(self):
+        item = self.queue.submit("Draft", "Draft only")
+        response = self.client.get(
+            f"/proposals/{item['id']}",
+            headers={"Authorization": "Bearer test-api-token"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], item["id"])
+
+    def test_rejected_decision_is_recorded_without_execution(self):
+        item = self.queue.submit("Draft", "Draft only")
+        response = self.client.post(
+            f"/proposals/{item['id']}/review",
+            headers={"Authorization": "Bearer test-founder-token"},
+            json={"decision": "rejected", "note": "Not approved"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "rejected")
+        self.assertNotIn("executed", response.json())
+        self.assertNotIn("action_executed", response.json())
+
+    def test_reviewing_an_already_reviewed_proposal_conflicts(self):
+        item = self.queue.submit("Draft", "Draft only")
+        headers = {"Authorization": "Bearer test-founder-token"}
+        first = self.client.post(
+            f"/proposals/{item['id']}/review",
+            headers=headers,
+            json={"decision": "approved"},
+        )
+        second = self.client.post(
+            f"/proposals/{item['id']}/review",
+            headers=headers,
+            json={"decision": "rejected"},
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(self.queue.get(item["id"])["status"], "approved")
+
+    def test_oversized_payload_is_rejected(self):
+        response = self.client.post(
+            "/proposals",
+            headers={"Authorization": "Bearer test-api-token"},
+            json={
+                "title": "Draft",
+                "description": "Draft only",
+                "payload": {"blob": "x" * 10001},
+            },
+        )
+        self.assertEqual(response.status_code, 413)
+
+
 if __name__ == "__main__":
     unittest.main()
