@@ -53,6 +53,18 @@ def create_app(queue: ApprovalQueue | None = None) -> FastAPI:
         _require_token("API_BEARER_TOKEN", authorization)
 
     def require_founder_token(authorization: str | None = Header(default=None)) -> None:
+        api_token = os.getenv("API_BEARER_TOKEN", "")
+        founder_token = os.getenv("FOUNDER_BEARER_TOKEN", "")
+        if not api_token or not founder_token:
+            raise HTTPException(
+                status_code=503,
+                detail="API_BEARER_TOKEN and FOUNDER_BEARER_TOKEN must both be configured",
+            )
+        if hmac.compare_digest(api_token, founder_token):
+            raise HTTPException(
+                status_code=503,
+                detail="Founder and API bearer tokens must be different",
+            )
         _require_token("FOUNDER_BEARER_TOKEN", authorization)
 
     @app.get("/health")
