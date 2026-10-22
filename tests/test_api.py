@@ -225,6 +225,18 @@ class ApprovalApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_extremely_long_content_length_is_rejected_without_server_error(self):
+        response = self.client.post(
+            "/proposals",
+            content=b"{}",
+            headers={
+                "Authorization": "Bearer test-api-token-32-bytes-long-123456",
+                "Content-Type": "application/json",
+                "Content-Length": "9" * 5000,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
     def test_content_length_mismatch_is_rejected(self):
         response = self.client.post(
             "/proposals",
@@ -256,7 +268,7 @@ class ApprovalApiTests(unittest.TestCase):
             json={
                 "title": "Draft",
                 "description": "Draft only",
-                "action_type": "content\\nexecute",
+                "action_type": "content\nexecute",
             },
         )
         self.assertEqual(response.status_code, 422)
