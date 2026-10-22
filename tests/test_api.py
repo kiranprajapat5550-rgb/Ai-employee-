@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from ai_employee_system.api import create_app
+from fastapi import HTTPException
+
+from ai_employee_system.api import _require_token, create_app
 from ai_employee_system.approvals import ApprovalQueue
 
 
@@ -96,12 +98,11 @@ class ApprovalApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("API_BEARER_TOKEN", response.text)
 
-    def test_non_ascii_supplied_token_returns_401_not_500(self):
-        response = self.client.get(
-            "/proposals",
-            headers={"Authorization": "Bearer " + ("é" * 32)},
-        )
-        self.assertEqual(response.status_code, 401)
+    def test_non_ascii_supplied_token_is_rejected_without_encoding_error(self):
+        # HTTP headers are ASCII-only, so test the auth helper directly.
+        with self.assertRaises(HTTPException) as caught:
+            _require_token("API_BEARER_TOKEN", "Bearer " + ("é" * 32))
+        self.assertEqual(caught.exception.status_code, 401)
 
     def test_api_documentation_routes_are_disabled(self):
         for path in ("/docs", "/redoc", "/openapi.json"):
