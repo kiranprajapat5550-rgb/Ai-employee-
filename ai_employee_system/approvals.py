@@ -1,16 +1,26 @@
 """SQLite proposal queue. Approval records consent only; it never executes actions."""
 import json
 import sqlite3
+from contextlib import contextmanager
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 class ApprovalQueue:
     def __init__(self, db_path: str | Path = "data/approvals.sqlite3") -> None:
-        self.db_path = str(db_path)
-        if self.db_path != ":memory:":
+        requested_path = str(db_path)
+        self._uri = requested_path == ":memory:"
+        self._anchor_connection: sqlite3.Connection | None = None
+        if self._uri:
+            # Keep one connection open so a shared in-memory DB survives per-operation connections.
+            self.db_path = f"file:approvalqueue_{uuid4().hex}?mode=memory&cache=shared"
+            self._anchor_connection = sqlite3.connect(self.db_path, uri=True)
+        else:
+            self.db_path = requested_path
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with self._transaction() as conn:
             conn.execute("""CREATE TABLE IF NOT EXISTS proposals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
@@ -25,22 +35,38 @@ class ApprovalQueue:
             )""")
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, uri=self._uri)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @contextmanager
+    def _transaction(self) -> Iterator[sqlite3.Connection]:
+        """Commit or roll back one transaction and always close its connection."""
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Release the keeper connection used by an in-memory database."""
+        if self._anchor_connection is not None:
+            self._anchor_connection.close()
+            self._anchor_connection = None
 
     def submit(self, title: str, description: str, action_type: str = "internal", payload: dict[str, Any] | None = None) -> dict[str, Any]:
         if not title.strip() or not description.strip():
             raise ValueError("title and description must not be empty")
         created = datetime.now(timezone.utc).isoformat()
-        with self._connect() as conn:
+        with self._transaction() as conn:
             cur = conn.execute("INSERT INTO proposals(title,description,action_type,payload_json,status,created_at) VALUES(?,?,?,?,?,?)",
                 (title.strip(), description.strip(), action_type.strip() or "internal", json.dumps(payload or {}, sort_keys=True), "pending_approval", created))
             proposal_id = cur.lastrowid
         return self.get(proposal_id)
 
     def get(self, proposal_id: int) -> dict[str, Any]:
-        with self._connect() as conn:
+        with self._transaction() as conn:
             row = conn.execute("SELECT * FROM proposals WHERE id=?", (proposal_id,)).fetchone()
         if row is None:
             raise KeyError(f"Proposal {proposal_id} not found")
@@ -49,7 +75,7 @@ class ApprovalQueue:
         return item
 
     def list(self, status: str | None = None) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with self._transaction() as conn:
             if status:
                 rows = conn.execute("SELECT id FROM proposals WHERE status=? ORDER BY id", (status,)).fetchall()
             else:
@@ -62,7 +88,7 @@ class ApprovalQueue:
         if not reviewer.strip():
             raise ValueError("reviewer is required")
         reviewed = datetime.now(timezone.utc).isoformat()
-        with self._connect() as conn:
+        with self._transaction() as conn:
             cur = conn.execute("""UPDATE proposals SET status=?, reviewed_at=?, reviewer=?, review_note=?
                 WHERE id=? AND status='pending_approval'""", (decision, reviewed, reviewer.strip(), note.strip(), proposal_id))
             if cur.rowcount != 1:
