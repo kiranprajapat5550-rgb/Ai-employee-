@@ -193,6 +193,99 @@ class ApprovalApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 413)
 
+    def test_oversized_request_body_is_rejected_before_json_validation(self):
+        response = self.client.post(
+            "/proposals",
+            content=b"x" * (32 * 1024 + 1),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("request body exceeds", response.text)
+
+    def test_request_body_at_limit_reaches_application_validation(self):
+        response = self.client.post(
+            "/proposals",
+            content=b"x" * (32 * 1024),
+            headers={
+                "Authorization": "Bearer test-api-token-32-bytes-long-123456",
+                "Content-Type": "application/json",
+            },
+        )
+        self.assertNotEqual(response.status_code, 413)
+
+    def test_malformed_content_length_is_rejected(self):
+        response = self.client.post(
+            "/proposals",
+            content=b"{}",
+            headers={
+                "Authorization": "Bearer test-api-token-32-bytes-long-123456",
+                "Content-Type": "application/json",
+                "Content-Length": "-1",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_extremely_long_content_length_is_rejected_without_server_error(self):
+        response = self.client.post(
+            "/proposals",
+            content=b"{}",
+            headers={
+                "Authorization": "Bearer test-api-token-32-bytes-long-123456",
+                "Content-Type": "application/json",
+                "Content-Length": "9" * 5000,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_content_length_mismatch_is_rejected(self):
+        response = self.client.post(
+            "/proposals",
+            content=b"{}",
+            headers={
+                "Authorization": "Bearer test-api-token-32-bytes-long-123456",
+                "Content-Type": "application/json",
+                "Content-Length": "3",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_action_type_rejects_spaces_and_control_characters(self):
+        response = self.client.post(
+            "/proposals",
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
+            json={
+                "title": "Draft",
+                "description": "Draft only",
+                "action_type": "content draft\\nexecute",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_action_type_rejects_actual_newline(self):
+        response = self.client.post(
+            "/proposals",
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
+            json={
+                "title": "Draft",
+                "description": "Draft only",
+                "action_type": "content\nexecute",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_valid_action_type_is_accepted(self):
+        response = self.client.post(
+            "/proposals",
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
+            json={
+                "title": "Draft",
+                "description": "Draft only",
+                "action_type": "social.post:create-v1",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["action_type"], "social.post:create-v1")
+
 
     def test_founder_review_fails_closed_when_tokens_are_identical(self):
         item = self.queue.submit("Draft", "Draft only")
