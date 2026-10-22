@@ -16,8 +16,8 @@ class ApprovalApiTests(unittest.TestCase):
         self.queue = ApprovalQueue(Path(self.tmp.name) / "api-test.sqlite3")
         self.client = TestClient(create_app(self.queue))
         self.env = patch.dict(os.environ, {
-            "API_BEARER_TOKEN": "test-api-token",
-            "FOUNDER_BEARER_TOKEN": "test-founder-token",
+            "API_BEARER_TOKEN": "test-api-token-32-bytes-long-123456",
+            "FOUNDER_BEARER_TOKEN": "test-founder-token-32-bytes-long-123",
         })
         self.env.start()
 
@@ -40,7 +40,7 @@ class ApprovalApiTests(unittest.TestCase):
     def test_create_and_list_pending_proposal(self):
         response = self.client.post(
             "/proposals",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
             json={"title": "Draft post", "description": "Draft only", "payload": {"channel": "test"}},
         )
         self.assertEqual(response.status_code, 201)
@@ -49,7 +49,7 @@ class ApprovalApiTests(unittest.TestCase):
         self.assertEqual(item["payload"]["channel"], "test")
         listed = self.client.get(
             "/proposals",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
         )
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(len(listed.json()), 1)
@@ -57,7 +57,7 @@ class ApprovalApiTests(unittest.TestCase):
     def test_rejects_unknown_fields(self):
         response = self.client.post(
             "/proposals",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
             json={"title": "Draft", "description": "Draft only", "execute_now": True},
         )
         self.assertEqual(response.status_code, 422)
@@ -66,7 +66,7 @@ class ApprovalApiTests(unittest.TestCase):
         item = self.queue.submit("Draft", "Draft only")
         response = self.client.post(
             f"/proposals/{item['id']}/review",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
             json={"decision": "approved"},
         )
         self.assertEqual(response.status_code, 401)
@@ -76,7 +76,7 @@ class ApprovalApiTests(unittest.TestCase):
         item = self.queue.submit("Draft", "Draft only")
         response = self.client.post(
             f"/proposals/{item['id']}/review",
-            headers={"Authorization": "Bearer test-founder-token"},
+            headers={"Authorization": "Bearer test-founder-token-32-bytes-long-123"},
             json={"decision": "approved", "note": "Reviewed test proposal"},
         )
         self.assertEqual(response.status_code, 200)
@@ -86,10 +86,32 @@ class ApprovalApiTests(unittest.TestCase):
         self.assertNotIn("executed", result)
         self.assertNotIn("action_executed", result)
 
+
+    def test_weak_configured_api_token_fails_closed(self):
+        with patch.dict(os.environ, {"API_BEARER_TOKEN": "short"}):
+            response = self.client.get(
+                "/proposals",
+                headers={"Authorization": "Bearer short"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("API_BEARER_TOKEN", response.text)
+
+    def test_non_ascii_supplied_token_returns_401_not_500(self):
+        response = self.client.get(
+            "/proposals",
+            headers={"Authorization": "Bearer " + ("é" * 32)},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_api_documentation_routes_are_disabled(self):
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 404, path)
+
     def test_invalid_status_filter_is_rejected(self):
         response = self.client.get(
             "/proposals?status=anything",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
         )
         self.assertEqual(response.status_code, 422)
 
@@ -97,7 +119,7 @@ class ApprovalApiTests(unittest.TestCase):
         with patch.dict(os.environ, {"API_BEARER_TOKEN": ""}):
             response = self.client.get(
                 "/proposals",
-                headers={"Authorization": "Bearer test-api-token"},
+                headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
             )
         self.assertEqual(response.status_code, 503)
 
@@ -114,7 +136,7 @@ class ApprovalApiTests(unittest.TestCase):
             item = self.queue.submit("Draft", "Draft only")
             response = self.client.post(
                 f"/proposals/{item['id']}/review",
-                headers={"Authorization": "Bearer test-founder-token"},
+                headers={"Authorization": "Bearer test-founder-token-32-bytes-long-123"},
                 json={"decision": "approved"},
             )
         self.assertEqual(response.status_code, 503)
@@ -124,7 +146,7 @@ class ApprovalApiTests(unittest.TestCase):
         item = self.queue.submit("Draft", "Draft only")
         response = self.client.get(
             f"/proposals/{item['id']}",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["id"], item["id"])
@@ -133,7 +155,7 @@ class ApprovalApiTests(unittest.TestCase):
         item = self.queue.submit("Draft", "Draft only")
         response = self.client.post(
             f"/proposals/{item['id']}/review",
-            headers={"Authorization": "Bearer test-founder-token"},
+            headers={"Authorization": "Bearer test-founder-token-32-bytes-long-123"},
             json={"decision": "rejected", "note": "Not approved"},
         )
         self.assertEqual(response.status_code, 200)
@@ -143,7 +165,7 @@ class ApprovalApiTests(unittest.TestCase):
 
     def test_reviewing_an_already_reviewed_proposal_conflicts(self):
         item = self.queue.submit("Draft", "Draft only")
-        headers = {"Authorization": "Bearer test-founder-token"}
+        headers = {"Authorization": "Bearer test-founder-token-32-bytes-long-123"}
         first = self.client.post(
             f"/proposals/{item['id']}/review",
             headers=headers,
@@ -161,7 +183,7 @@ class ApprovalApiTests(unittest.TestCase):
     def test_oversized_payload_is_rejected(self):
         response = self.client.post(
             "/proposals",
-            headers={"Authorization": "Bearer test-api-token"},
+            headers={"Authorization": "Bearer test-api-token-32-bytes-long-123456"},
             json={
                 "title": "Draft",
                 "description": "Draft only",
@@ -174,12 +196,12 @@ class ApprovalApiTests(unittest.TestCase):
     def test_founder_review_fails_closed_when_tokens_are_identical(self):
         item = self.queue.submit("Draft", "Draft only")
         with patch.dict(os.environ, {
-            "API_BEARER_TOKEN": "same-token",
-            "FOUNDER_BEARER_TOKEN": "same-token",
+            "API_BEARER_TOKEN": "same-token-is-long-enough-1234567890",
+            "FOUNDER_BEARER_TOKEN": "same-token-is-long-enough-1234567890",
         }):
             response = self.client.post(
                 f"/proposals/{item['id']}/review",
-                headers={"Authorization": "Bearer same-token"},
+                headers={"Authorization": "Bearer same-token-is-long-enough-1234567890"},
                 json={"decision": "approved"},
             )
         self.assertEqual(response.status_code, 503)
@@ -189,11 +211,11 @@ class ApprovalApiTests(unittest.TestCase):
         item = self.queue.submit("Draft", "Draft only")
         with patch.dict(os.environ, {
             "API_BEARER_TOKEN": "",
-            "FOUNDER_BEARER_TOKEN": "test-founder-token",
+            "FOUNDER_BEARER_TOKEN": "test-founder-token-32-bytes-long-123",
         }):
             response = self.client.post(
                 f"/proposals/{item['id']}/review",
-                headers={"Authorization": "Bearer test-founder-token"},
+                headers={"Authorization": "Bearer test-founder-token-32-bytes-long-123"},
                 json={"decision": "approved"},
             )
         self.assertEqual(response.status_code, 503)
