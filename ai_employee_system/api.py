@@ -30,14 +30,23 @@ class RequestBodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        headers = {key.lower(): value for key, value in scope.get("headers", [])}
-        content_length = headers.get(b"content-length")
-        if content_length:
-            try:
-                if int(content_length) > self.max_body_bytes:
-                    await self._too_large(send)
-                    return
-            except ValueError:
+        content_lengths = [
+            value for key, value in scope.get("headers", [])
+            if key.lower() == b"content-length"
+        ]
+        if len(content_lengths) > 1:
+            await self._bad_request(send)
+            return
+
+        declared_length = None
+        if content_lengths:
+            raw_length = content_lengths[0]
+            # Content-Length must be a non-negative decimal integer; reject ambiguous values.
+            if not raw_length or not raw_length.isdigit():
+                await self._bad_request(send)
+                return
+            declared_length = int(raw_length)
+            if declared_length > self.max_body_bytes:
                 await self._too_large(send)
                 return
 
@@ -56,6 +65,10 @@ class RequestBodyLimitMiddleware:
             if not message.get("more_body", False):
                 break
 
+        if declared_length is not None and total != declared_length:
+            await self._bad_request(send)
+            return
+
         body = b"".join(chunks)
         delivered = False
 
@@ -67,6 +80,19 @@ class RequestBodyLimitMiddleware:
             return await receive()
 
         await self.app(scope, replay_body, send)
+
+    @staticmethod
+    async def _bad_request(send) -> None:
+        body = b'{"detail":"invalid request body length"}'
+        await send({
+            "type": "http.response.start",
+            "status": 400,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
 
     @staticmethod
     async def _too_large(send) -> None:
