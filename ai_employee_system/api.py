@@ -33,10 +33,15 @@ class ReviewDecision(BaseModel):
 
 def _require_token(expected_env: str, authorization: str | None) -> None:
     expected = os.getenv(expected_env, "")
-    if not expected:
-        raise HTTPException(status_code=503, detail=f"{expected_env} is not configured")
+    if len(expected.encode("utf-8")) < 32:
+        # Keep configuration details out of responses and fail closed on weak tokens.
+        raise HTTPException(status_code=503, detail="Service authentication is not configured correctly")
     scheme, _, supplied = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not supplied or not hmac.compare_digest(supplied, expected):
+    if (
+        scheme.lower() != "bearer"
+        or not supplied
+        or not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing bearer token")
 
 
@@ -47,6 +52,9 @@ def create_app(queue: ApprovalQueue | None = None) -> FastAPI:
         title="AI Employee Approval API",
         version="0.1.0",
         description="Authenticated proposal and founder-review API. No action executor is included.",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     def require_api_token(authorization: str | None = Header(default=None)) -> None:
@@ -55,15 +63,15 @@ def create_app(queue: ApprovalQueue | None = None) -> FastAPI:
     def require_founder_token(authorization: str | None = Header(default=None)) -> None:
         api_token = os.getenv("API_BEARER_TOKEN", "")
         founder_token = os.getenv("FOUNDER_BEARER_TOKEN", "")
-        if not api_token or not founder_token:
+        if len(api_token.encode("utf-8")) < 32 or len(founder_token.encode("utf-8")) < 32:
             raise HTTPException(
                 status_code=503,
-                detail="API_BEARER_TOKEN and FOUNDER_BEARER_TOKEN must both be configured",
+                detail="Service authentication is not configured correctly",
             )
-        if hmac.compare_digest(api_token, founder_token):
+        if hmac.compare_digest(api_token.encode("utf-8"), founder_token.encode("utf-8")):
             raise HTTPException(
                 status_code=503,
-                detail="Founder and API bearer tokens must be different",
+                detail="Service authentication is not configured correctly",
             )
         _require_token("FOUNDER_BEARER_TOKEN", authorization)
 
