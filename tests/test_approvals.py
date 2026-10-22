@@ -10,6 +10,16 @@ class ApprovalQueueTests(unittest.TestCase):
         self.queue = ApprovalQueue(Path(self.tmp.name) / "test.sqlite3")
     def tearDown(self):
         self.tmp.cleanup()
+    def test_in_memory_database_persists_across_queue_operations(self):
+        queue = ApprovalQueue(":memory:")
+        try:
+            item = queue.submit("Memory draft", "In-memory persistence test")
+            fetched = queue.get(item["id"])
+            self.assertEqual(fetched["title"], "Memory draft")
+            self.assertEqual(len(queue.list()), 1)
+        finally:
+            queue.close()
+
     def test_submit_starts_pending(self):
         item = self.queue.submit("Draft post", "Prepare a draft", "content", {"channel": "instagram"})
         self.assertEqual(item["status"], "pending_approval")
