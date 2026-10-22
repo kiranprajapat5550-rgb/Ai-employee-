@@ -15,12 +15,84 @@ from pydantic import BaseModel, ConfigDict, Field
 from .approvals import ApprovalQueue
 
 
+MAX_REQUEST_BODY_BYTES = 32 * 1024
+
+
+class RequestBodyLimitMiddleware:
+    """Bound incoming write-request bodies before JSON parsing and validation."""
+
+    def __init__(self, app, max_body_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        content_length = headers.get(b"content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_body_bytes:
+                    await self._too_large(send)
+                    return
+            except ValueError:
+                await self._too_large(send)
+                return
+
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > self.max_body_bytes:
+                await self._too_large(send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+
+        body = b"".join(chunks)
+        delivered = False
+
+        async def replay_body():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay_body, send)
+
+    @staticmethod
+    async def _too_large(send) -> None:
+        body = b'{"detail":"request body exceeds 32768 bytes"}'
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
 class ProposalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
-    action_type: str = Field(default="internal", min_length=1, max_length=80)
+    action_type: str = Field(
+        default="internal",
+        min_length=1,
+        max_length=80,
+        pattern=r"^[A-Za-z][A-Za-z0-9_.:-]{0,79}$",
+    )
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -56,6 +128,7 @@ def create_app(queue: ApprovalQueue | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+    app.add_middleware(RequestBodyLimitMiddleware)
 
     def require_api_token(authorization: str | None = Header(default=None)) -> None:
         _require_token("API_BEARER_TOKEN", authorization)
