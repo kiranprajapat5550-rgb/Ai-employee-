@@ -45,7 +45,12 @@ class RequestBodyLimitMiddleware:
             if not raw_length or not raw_length.isdigit():
                 await self._bad_request(send)
                 return
-            declared_length = int(raw_length)
+            try:
+                declared_length = int(raw_length)
+            except ValueError:
+                # Extremely long digit strings can exceed Python's safe int conversion limit.
+                await self._bad_request(send)
+                return
             if declared_length > self.max_body_bytes:
                 await self._too_large(send)
                 return
