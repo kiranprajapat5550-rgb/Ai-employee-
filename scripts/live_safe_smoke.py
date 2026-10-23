@@ -6,19 +6,32 @@ or 503 (service deliberately fails closed while auth is unconfigured).
 """
 import json
 import sys
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 BASE_URL = "https://ai-employee-approval-api-test.onrender.com"
+REQUEST_TIMEOUT_SECONDS = 45
+NETWORK_ATTEMPTS = 2
 
 
 def get(path: str):
-    request = Request(f"{BASE_URL}{path}", method="GET")
-    try:
-        with urlopen(request, timeout=25) as response:
-            return response.status, response.read()
-    except HTTPError as exc:
-        return exc.code, exc.read()
+    """GET with one retry for transient network/cold-start timeouts."""
+    last_error = None
+    for attempt in range(NETWORK_ATTEMPTS):
+        request = Request(f"{BASE_URL}{path}", method="GET")
+        try:
+            with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                return response.status, response.read()
+        except HTTPError as exc:
+            return exc.code, exc.read()
+        except (URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt + 1 < NETWORK_ATTEMPTS:
+                time.sleep(2)
+    raise RuntimeError(
+        f"GET {path} failed after {NETWORK_ATTEMPTS} attempts: {last_error}"
+    )
 
 
 def main() -> int:
@@ -44,7 +57,7 @@ def main() -> int:
         print("PASS: API docs route is disabled (404)")
         print("PASS: read-only live smoke checks complete; no records were changed")
         return 0
-    except (AssertionError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (AssertionError, URLError, TimeoutError, RuntimeError, OSError, json.JSONDecodeError) as exc:
         print(f"FAIL: live smoke check: {exc}", file=sys.stderr)
         return 1
 
