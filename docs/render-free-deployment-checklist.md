@@ -17,7 +17,7 @@ change Render settings, configure secrets, or connect n8n.
 
 ## Important Free-tier limitation
 
-The application defaults to SQLite at `data/approvals.sqlite3`. The Render Free service does not have a persistent disk configured, so SQLite data on its local filesystem must be treated as temporary and may be lost on restart or redeploy. Do not use this deployment as the sole store for important approvals or audit records.
+The application defaults to SQLite at `data/approvals.sqlite3`. The Render Free service does not have a persistent disk configured, so SQLite data on its local filesystem must be treated as temporary and may be lost on restart or redeploy. Do not use this deployment as the sole store for important approvals or audit records. No database is currently connected to this service. A separate database in the same Render workspace is associated with another project; it is not assumed to be suitable or authorized for this application and has not been changed.
 
 Before relying on persistent records, select and configure a persistent database/storage option, verify backup and restore, and test restart/redeploy behavior. Do not assume that committing the SQLite file to Git is a safe persistence solution.
 
