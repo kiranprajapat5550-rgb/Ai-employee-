@@ -1,0 +1,8 @@
+{
+  "sender": "Your Team",
+  "email": {
+    "subject": "Following up on your request",
+    "body": "Hello {name},\n\nYou asked us to follow up. Please reply if you would still like help. If you no longer want messages, let us know and we will stop.\n\nRegards,\n{sender}"
+  },
+  "whatsapp": {"template_name": "followup_intro"}
+}
