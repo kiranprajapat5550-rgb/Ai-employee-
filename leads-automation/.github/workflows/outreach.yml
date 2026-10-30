@@ -1,0 +1,25 @@
+name: Leads automation (manual dry-run)
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Keep true for the default safe run
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run tests
+        working-directory: leads-automation
+        run: python -m unittest discover -s tests -v
+      - name: Run dry-run
+        if: ${{ inputs.dry_run == 'true' }}
+        working-directory: leads-automation
+        run: python outreach.py --csv leads.csv
