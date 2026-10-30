@@ -1,25 +1,32 @@
-name: Leads automation (manual dry-run)
+name: Leads automation safety checks
 on:
+  push:
+    paths:
+      - "leads-automation/**"
+  pull_request:
+    paths:
+      - "leads-automation/**"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Keep true for the default safe run
+        description: Run the safe dry-run after tests
         required: true
-        default: 'true'
+        default: "true"
         type: choice
-        options: ['true', 'false']
+        options: ["true", "false"]
+
 jobs:
-  run:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - name: Run tests
+          python-version: "3.12"
+      - name: Run unit tests
         working-directory: leads-automation
         run: python -m unittest discover -s tests -v
-      - name: Run dry-run
-        if: ${{ inputs.dry_run == 'true' }}
+      - name: Run dry-run (manual trigger only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true' }}
         working-directory: leads-automation
         run: python outreach.py --csv leads.csv
